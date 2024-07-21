@@ -159,8 +159,6 @@ class StablelmDecoderLayer(nn.Module):
         norm_eps = getattr(config, "norm_eps",
                            getattr(config, "layer_norm_eps", 1e-05))
         self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=norm_eps)
-        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size,
-                                                     eps=norm_eps)
 
     def forward(
         self,
@@ -171,20 +169,15 @@ class StablelmDecoderLayer(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Self Attention
         residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-        hidden_states = self.self_attn(
+        postnorm = self.input_layernorm(hidden_states)
+        attn_plus = self.self_attn(
             positions=positions,
-            hidden_states=hidden_states,
+            hidden_states=postnorm,
             kv_cache=kv_cache,
             attn_metadata=attn_metadata,
         )
-        hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+        ffn_plus = self.mlp(postnorm)
+        hidden_states = residual + (attn_plus + ffn_plus)
 
         return hidden_states, residual
 
